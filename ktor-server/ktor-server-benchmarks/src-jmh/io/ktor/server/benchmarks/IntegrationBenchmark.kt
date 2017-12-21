@@ -41,6 +41,9 @@ abstract class IntegrationBenchmark {
         root.level = Level.ERROR
         server = createServer(port) {
             routing {
+                get("/long/path/to/find/issues/with/routing/scalability") {
+                    call.respond(okContent)
+                }
                 get("/sayOK") {
                     call.respond(okContent)
                 }
@@ -93,6 +96,11 @@ abstract class IntegrationBenchmark {
     @Benchmark
     fun sayOK() {
         load("http://localhost:$port/sayOK")
+    }
+
+    @Benchmark
+    fun longPath() {
+        load("http://localhost:$port/long/path/to/find/issues/with/routing/scalability")
     }
 
     @Benchmark
@@ -158,35 +166,38 @@ class CIOIntegrationBenchmark : IntegrationBenchmark() {
 NOTE: Results on Ilya's MacBook Pro, rebooted without any extra programs running, executed with Gradle
 
 Benchmark                                        Mode  Cnt   Score   Error   Units
-CIOIntegrationBenchmark.jarfile                 thrpt   20   8.280 ± 0.314  ops/ms
-CIOIntegrationBenchmark.largeFile               thrpt   20   0.516 ± 0.011  ops/ms
-CIOIntegrationBenchmark.largeFileSync           thrpt   20   0.570 ± 0.016  ops/ms
-CIOIntegrationBenchmark.query                   thrpt   20  47.998 ± 1.252  ops/ms
-CIOIntegrationBenchmark.regularClasspathFile    thrpt   20  15.109 ± 0.255  ops/ms
-CIOIntegrationBenchmark.sayOK                   thrpt   20  53.502 ± 1.659  ops/ms
-CIOIntegrationBenchmark.smallFile               thrpt   20  31.820 ± 0.476  ops/ms
-CIOIntegrationBenchmark.smallFileSync           thrpt   20  42.918 ± 1.017  ops/ms
-CIOIntegrationBenchmark.thinkOK                 thrpt   20  54.000 ± 0.777  ops/ms
+CIOIntegrationBenchmark.jarfile                 thrpt   20   8.287 ± 0.230  ops/ms
+CIOIntegrationBenchmark.largeFile               thrpt   20   0.532 ± 0.014  ops/ms
+CIOIntegrationBenchmark.largeFileSync           thrpt   20   0.569 ± 0.013  ops/ms
+CIOIntegrationBenchmark.longPath                thrpt   20  52.818 ± 0.934  ops/ms
+CIOIntegrationBenchmark.query                   thrpt   20  47.805 ± 0.869  ops/ms
+CIOIntegrationBenchmark.regularClasspathFile    thrpt   20  15.292 ± 0.446  ops/ms
+CIOIntegrationBenchmark.sayOK                   thrpt   20  54.611 ± 0.942  ops/ms
+CIOIntegrationBenchmark.smallFile               thrpt   20  31.519 ± 0.566  ops/ms
+CIOIntegrationBenchmark.smallFileSync           thrpt   20  43.335 ± 0.791  ops/ms
+CIOIntegrationBenchmark.thinkOK                 thrpt   20  52.960 ± 0.969  ops/ms
 
-JettyIntegrationBenchmark.jarfile               thrpt   20   9.241 ± 0.467  ops/ms
-JettyIntegrationBenchmark.largeFile             thrpt   20   1.121 ± 0.032  ops/ms
-JettyIntegrationBenchmark.largeFileSync         thrpt   20   1.181 ± 0.025  ops/ms
-JettyIntegrationBenchmark.query                 thrpt   20  27.000 ± 1.867  ops/ms
-JettyIntegrationBenchmark.regularClasspathFile  thrpt   20  16.778 ± 1.675  ops/ms
-JettyIntegrationBenchmark.sayOK                 thrpt   20  30.925 ± 1.612  ops/ms
-JettyIntegrationBenchmark.smallFile             thrpt   20  26.338 ± 1.829  ops/ms
-JettyIntegrationBenchmark.smallFileSync         thrpt   20  25.525 ± 1.588  ops/ms
-JettyIntegrationBenchmark.thinkOK               thrpt   20  27.348 ± 2.219  ops/ms
+JettyIntegrationBenchmark.jarfile               thrpt   20  10.313 ± 0.899  ops/ms
+JettyIntegrationBenchmark.largeFile             thrpt   20   1.122 ± 0.025  ops/ms
+JettyIntegrationBenchmark.largeFileSync         thrpt   20   1.188 ± 0.022  ops/ms
+JettyIntegrationBenchmark.longPath              thrpt   20  24.163 ± 2.039  ops/ms
+JettyIntegrationBenchmark.query                 thrpt   20  28.594 ± 3.010  ops/ms
+JettyIntegrationBenchmark.regularClasspathFile  thrpt   20  16.564 ± 1.784  ops/ms
+JettyIntegrationBenchmark.sayOK                 thrpt   20  25.831 ± 2.545  ops/ms
+JettyIntegrationBenchmark.smallFile             thrpt   20  28.135 ± 2.543  ops/ms
+JettyIntegrationBenchmark.smallFileSync         thrpt   20  24.690 ± 1.785  ops/ms
+JettyIntegrationBenchmark.thinkOK               thrpt   20  25.152 ± 1.605  ops/ms
 
-NettyIntegrationBenchmark.jarfile               thrpt   20  10.640 ± 0.234  ops/ms
-NettyIntegrationBenchmark.largeFile             thrpt   20   0.853 ± 0.015  ops/ms
-NettyIntegrationBenchmark.largeFileSync         thrpt   20   3.633 ± 0.063  ops/ms
-NettyIntegrationBenchmark.query                 thrpt   20  47.397 ± 0.811  ops/ms
-NettyIntegrationBenchmark.regularClasspathFile  thrpt   20  18.127 ± 0.294  ops/ms
-NettyIntegrationBenchmark.sayOK                 thrpt   20  51.893 ± 1.016  ops/ms
-NettyIntegrationBenchmark.smallFile             thrpt   20  34.043 ± 0.747  ops/ms
-NettyIntegrationBenchmark.smallFileSync         thrpt   20  42.729 ± 1.431  ops/ms
-NettyIntegrationBenchmark.thinkOK               thrpt   20  51.209 ± 1.335  ops/ms
+NettyIntegrationBenchmark.jarfile               thrpt   20  10.714 ± 0.227  ops/ms
+NettyIntegrationBenchmark.largeFile             thrpt   20   0.877 ± 0.017  ops/ms
+NettyIntegrationBenchmark.largeFileSync         thrpt   20   3.625 ± 0.052  ops/ms
+NettyIntegrationBenchmark.longPath              thrpt   20  50.977 ± 0.671  ops/ms
+NettyIntegrationBenchmark.query                 thrpt   20  47.982 ± 0.925  ops/ms
+NettyIntegrationBenchmark.regularClasspathFile  thrpt   20  18.352 ± 0.354  ops/ms
+NettyIntegrationBenchmark.sayOK                 thrpt   20  52.682 ± 1.267  ops/ms
+NettyIntegrationBenchmark.smallFile             thrpt   20  34.289 ± 0.909  ops/ms
+NettyIntegrationBenchmark.smallFileSync         thrpt   20  43.857 ± 0.709  ops/ms
+NettyIntegrationBenchmark.thinkOK               thrpt   20  52.334 ± 1.351  ops/ms
 */
 
 fun main(args: Array<String>) {

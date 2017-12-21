@@ -3,6 +3,9 @@ package io.ktor.pipeline
 import io.ktor.util.*
 import java.util.*
 
+/**
+ * Represents an execution pipeline for asynchronous extensible computations
+ */
 open class Pipeline<TSubject : Any, TContext : Any>(vararg phases: PipelinePhase) {
     /**
      * Provides common place to store pipeline attributes
@@ -13,80 +16,158 @@ open class Pipeline<TSubject : Any, TContext : Any>(vararg phases: PipelinePhase
         interceptors.forEach { intercept(phase, it) }
     }
 
-    suspend fun execute(context: TContext, subject: TSubject): TSubject = PipelineContext(context, interceptors(), subject).proceed()
+    /**
+     * Executes this pipeline in the given [context] and with the given [subject]
+     */
+    suspend fun execute(context: TContext, subject: TSubject): TSubject = PipelineContext(context, subject, InterceptorIterator(phases)).proceed()
 
-    private class PhaseContent<TSubject : Any, Call : Any>(
-            val phase: PipelinePhase,
-            val relation: PipelinePhaseRelation,
-            val interceptors: ArrayList<PipelineInterceptor<TSubject, Call>>
-    ) {
-        override fun toString(): String = "Phase `${phase.name}`, ${interceptors.size} handlers"
-    }
-
-    sealed class PipelinePhaseRelation {
+    /**
+     * Represents relations between pipeline phases
+     */
+    private sealed class PipelinePhaseRelation {
+        /**
+         * Given phase should be executed after [relativeTo] phase
+         * @property relativeTo represents phases for relative positioning
+         */
         class After(val relativeTo: PipelinePhase) : PipelinePhaseRelation()
+
+        /**
+         * Given phase should be executed before [relativeTo] phase
+         * @property relativeTo represents phases for relative positioning
+         */
         class Before(val relativeTo: PipelinePhase) : PipelinePhaseRelation()
+
+        /**
+         * Given phase should be executed last
+         */
         object Last : PipelinePhaseRelation()
     }
 
     private val phases = phases.mapTo(ArrayList<PhaseContent<TSubject, TContext>>(phases.size)) {
-        PhaseContent(it, PipelinePhaseRelation.Last, arrayListOf())
+        PhaseContent(it, PipelinePhaseRelation.Last)
     }
 
-    private var interceptorsQuantity = 0
-    @Volatile
-    private var interceptors: ArrayList<PipelineInterceptor<TSubject, TContext>>? = null
-
+    /**
+     * Phases of this pipeline
+     */
     val items: List<PipelinePhase> get() = phases.map { it.phase }
 
+    /**
+     * Adds [phase] to the end of this pipeline
+     */
     fun addPhase(phase: PipelinePhase) {
         if (phases.any { it.phase == phase }) return
-        phases.add(PhaseContent(phase, PipelinePhaseRelation.Last, arrayListOf()))
-        interceptors = null
+        phases.add(PhaseContent(phase, PipelinePhaseRelation.Last))
     }
 
+    /**
+     * Inserts [phase] after the [reference] phase
+     */
     fun insertPhaseAfter(reference: PipelinePhase, phase: PipelinePhase) {
         if (phases.any { it.phase == phase }) return
         val index = phases.indexOfFirst { it.phase == reference }
         if (index == -1)
             throw InvalidPhaseException("Phase $reference was not registered for this pipeline")
-        phases.add(index + 1, PhaseContent(phase, PipelinePhaseRelation.After(reference), arrayListOf()))
-        interceptors = null
+        phases.add(index + 1, PhaseContent(phase, PipelinePhaseRelation.After(reference)))
     }
 
+    /**
+     * Inserts [phase] before the [reference] phase
+     */
     fun insertPhaseBefore(reference: PipelinePhase, phase: PipelinePhase) {
         if (phases.any { it.phase == phase }) return
         val index = phases.indexOfFirst { it.phase == reference }
         if (index == -1)
             throw InvalidPhaseException("Phase $reference was not registered for this pipeline")
-        phases.add(index, PhaseContent(phase, PipelinePhaseRelation.Before(reference), arrayListOf()))
-        interceptors = null
+        phases.add(index, PhaseContent(phase, PipelinePhaseRelation.Before(reference)))
     }
 
-    private fun interceptors(): ArrayList<PipelineInterceptor<TSubject, TContext>> {
-        return interceptors ?: cacheInterceptors()
-    }
-
-    private fun cacheInterceptors(): ArrayList<PipelineInterceptor<TSubject, TContext>> {
-        val destination = ArrayList<PipelineInterceptor<TSubject, TContext>>(interceptorsQuantity)
-        for (phaseIndex in 0..phases.lastIndex) {
-            val elements = phases[phaseIndex].interceptors
-            for (elementIndex in 0..elements.lastIndex) {
-                destination.add(elements[elementIndex])
-            }
-        }
-        interceptors = destination
-        return destination
-    }
-
+    /**
+     * Adds [block] to the [phase] of this pipeline
+     */
     open fun intercept(phase: PipelinePhase, block: PipelineInterceptor<TSubject, TContext>) {
         val phaseContent = phases.firstOrNull { it.phase == phase }
                 ?: throw InvalidPhaseException("Phase $phase was not registered for this pipeline")
 
-        phaseContent.interceptors.add(block)
-        interceptorsQuantity++
-        interceptors = null
+        phaseContent.add(block)
     }
+
+    private class InterceptorIterator<TSubject : Any, TContext : Any>(val phases: ArrayList<PhaseContent<TSubject, TContext>>) : Iterator<PipelineInterceptor<TSubject, TContext>> {
+        var phaseIndex = 0
+        var interceptorIndex = 0
+        var current: PipelineInterceptor<TSubject, TContext>? = null
+
+        fun calculateNext() {
+            while (phaseIndex < phases.size) {
+                val elements = phases[phaseIndex]
+                if (interceptorIndex < elements.size) {
+                    current = elements[interceptorIndex]
+                    interceptorIndex++
+                    return
+                }
+                phaseIndex++
+                interceptorIndex = 0
+            }
+            current = null
+        }
+
+        init {
+            calculateNext()
+        }
+
+        override fun hasNext(): Boolean = current != null
+
+        override fun next(): PipelineInterceptor<TSubject, TContext> {
+            val previous = current!!
+            calculateNext()
+            return previous
+        }
+    }
+
+    private class PhaseContent<TSubject : Any, TContext : Any>(
+            val phase: PipelinePhase,
+            val relation: PipelinePhaseRelation
+    ) {
+        private val interceptors = mutableListOf<List<PipelineInterceptor<TSubject, TContext>>>()
+        private var mutation: MutableList<PipelineInterceptor<TSubject, TContext>>? = null
+        private var totalSize = 0
+
+        constructor(other: PhaseContent<TSubject, TContext>) : this(other.phase, other.relation) {
+            addAll(other)
+        }
+
+        fun addAll(other: PhaseContent<TSubject, TContext>) {
+            interceptors.addAll(other.interceptors)
+            totalSize += other.totalSize
+            other.mutation = null
+            mutation = null
+        }
+
+        override fun toString(): String = "Phase `${phase.name}`, $totalSize handlers"
+
+        fun add(block: PipelineInterceptor<TSubject, TContext>) {
+            if (mutation == null) {
+                mutation = mutableListOf()
+                interceptors.add(mutation!!)
+            }
+
+            mutation!!.add(block)
+            totalSize++
+        }
+
+        val size: Int get() = totalSize
+
+        operator fun get(index: Int): PipelineInterceptor<TSubject, TContext> {
+            var running = index
+            var block = 0
+            while (running >= interceptors[block].size) {
+                running -= interceptors[block].size
+                block++
+            }
+            return interceptors[block][running]
+        }
+    }
+
 
     companion object {
         @JvmStatic
@@ -101,6 +182,9 @@ open class Pipeline<TSubject : Any, TContext : Any>(vararg phases: PipelinePhase
         }
     }
 
+    /**
+     * Merges another pipeline into this pipeline, maintaining relative phases order
+     */
     fun merge(from: Pipeline<TSubject, TContext>) {
         if (from.phases.isEmpty())
             return
@@ -109,11 +193,8 @@ open class Pipeline<TSubject : Any, TContext : Any>(vararg phases: PipelinePhase
             @Suppress("LoopToCallChain")
             for (index in 0..fromPhases.lastIndex) {
                 val fromContent = fromPhases[index]
-                val interceptors = ArrayList<PipelineInterceptor<TSubject, TContext>>(fromContent.interceptors)
-                phases.add(PhaseContent(fromContent.phase, fromContent.relation, interceptors))
+                phases.add(PhaseContent(fromContent))
             }
-            interceptorsQuantity += from.interceptorsQuantity
-            interceptors = null
             return
         }
 
@@ -128,25 +209,34 @@ open class Pipeline<TSubject : Any, TContext : Any>(vararg phases: PipelinePhase
                 }
                 phases.first { it.phase == fromContent.phase }
             }
-            phaseContent.interceptors.addAll(fromContent.interceptors)
-            interceptorsQuantity += fromContent.interceptors.size
+            phaseContent.addAll(fromContent)
         }
-        interceptors = null
     }
 }
 
+/**
+ * Executes this pipeline
+ */
+@Suppress("NOTHING_TO_INLINE")
 suspend inline fun <TContext : Any> Pipeline<Unit, TContext>.execute(context: TContext) = execute(context, Unit)
 
+/**
+ * Intercepts an untyped pipeline when the subject is of the given type
+ */
 inline fun <reified TSubject : Any, TContext : Any> Pipeline<*, TContext>.intercept(
         phase: PipelinePhase,
         noinline block: suspend PipelineContext<TSubject, TContext>.(TSubject) -> Unit) {
 
     intercept(phase) interceptor@ { subject ->
         subject as? TSubject ?: return@interceptor
+        @Suppress("UNCHECKED_CAST")
         val reinterpret = this as? PipelineContext<TSubject, TContext>
         reinterpret?.block(subject)
     }
 }
 
+/**
+ * Represents an interceptor type which is a suspend extension function for context
+ */
 typealias PipelineInterceptor<TSubject, TContext> = suspend PipelineContext<TSubject, TContext>.(TSubject) -> Unit
 
