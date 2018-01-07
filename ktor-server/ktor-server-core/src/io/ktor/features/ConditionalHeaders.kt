@@ -154,8 +154,9 @@ suspend fun ApplicationCall.withLastModified(lastModified: LocalDateTime, putHea
  */
 val OutgoingContent.defaultVersions: List<Version>
     get() {
-        if (this is VersionedContent)
-            return versions
+        val extensionVersions = versions
+        if (extensionVersions.isNotEmpty())
+            return extensionVersions
 
         val headers = headers
         val lastModifiedHeaders = headers.getAll(HttpHeaders.LastModified) ?: emptyList()
